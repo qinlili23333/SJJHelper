@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         书加加梨酱小帮手
 // @namespace    https://qinlili.bid/
-// @version      1.0.0
+// @version      1.0.1
 // @description  全自动下载资源！
 // @author       琴梨梨
 // @match        https://dogwood.xdfsjj.com/pc/bookDetail.html?*
@@ -422,7 +422,15 @@
                 signBody.pcrId=pcrid
             }
             signBody._sign=utils.sign(signBody)
-            return new URLSearchParams(signBody).toString()}
+            return new URLSearchParams(signBody).toString()},
+        //根据地址推测后缀
+        getExtFromUrl:url=>{
+            let ext=url.substr(url.lastIndexOf("."))
+            if(ext.indexOf("?")>0){
+                ext=ext.substr(0,ext.indexOf("?"))
+            }
+            return ext
+        },
     }
     if(document.getElementsByClassName("ytButton-container button-exit")[0]){
         //已登录
@@ -502,6 +510,7 @@
                                 console.error(fileInfo);
                             }
                             break;}
+                        case 7:
                         case 19:{
                             const fileInfo=await (await fetch("https://dogwood.xdfsjj.com/resourceService/detail.do", {
                                 "headers": {
@@ -516,15 +525,23 @@
                             })).json()
                             if(fileInfo.success){
                                 fileInfo.data.resourceDTOList.forEach(doc=>{
-                                    switch(config.docFormat){
+                                    let format=config.docFormat;
+                                    if(fileList[i].type==7){
+                                        format="pdf";
+                                    }
+                                    switch(format){
                                         case "origin":{
                                             const rawUrl=new URL(doc.content).searchParams.get("furl");
-                                            XHRDL.newTask(rawUrl,fileList[i].title+rawUrl.substr(rawUrl.lastIndexOf(".")))
+                                            XHRDL.newTask(rawUrl,fileList[i].title+utils.getExtFromUrl(rawUrl))
                                             console.log(rawUrl)
                                             break;
                                         }
                                         case "pdf":{
-                                            XHRDL.newTask(doc.downUrl,fileList[i].title+".pdf")
+                                            let filename=fileList[i].title+".pdf"
+                                            if(fileList[i].type==7){
+                                                filename=fileList[i].title+utils.getExtFromUrl(doc.downUrl)
+                                            }
+                                            XHRDL.newTask(doc.downUrl,filename)
                                             console.log(doc.downUrl)
                                             break;
                                         }
@@ -535,6 +552,9 @@
                                 console.error(fileInfo);
                             }
                             break;}
+                        case 4:{
+                            console.log("跳过广告链接");
+                        }
                         default:{
                             console.error("遇到了不支持的文件类型");
                             console.error(fileList[i]);
@@ -543,8 +563,8 @@
                     await sleep(100)
                 }
                 SakiProgress.setPercent(100);
-                SakiProgress.setText("文件信息全部获取完成！五秒后开始下载")
-                await sleep(5000)
+                SakiProgress.setText("文件信息全部获取完成！三秒后开始下载")
+                await sleep(3000)
                 XHRDL.DLEngine.start();
             })
         }else{
