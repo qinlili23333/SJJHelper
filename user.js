@@ -1,15 +1,16 @@
 // ==UserScript==
 // @name         书加加梨酱小帮手
 // @namespace    https://qinlili.bid/
-// @version      1.0.1
+// @version      1.1.0
 // @description  全自动下载资源！
 // @author       琴梨梨
-// @match        https://dogwood.xdfsjj.com/pc/bookDetail.html?*
+// @match        https://dogwood.xdfsjj.com/pc/*
 // @icon         https://dogwood.xdfsjj.com/qrcode/img/favicon.ico
 // @grant        none
 // @run-at       document-idle
 // @license      GPLv3
 // @require      https://lib.baomitu.com/crypto-js/4.1.1/crypto-js.min.js#sha512-E8QSvWZ0eCLGk4km3hxSsNmGWbLtSCSUcewDQPQWZF6pEU8GlT8a5fF32wOl1i8ftdMhssTrF/OhyGWwonTcXA==
+// @require      https://npm.elemecdn.com/jsqr@1.4.0/dist/jsQR.js
 // ==/UserScript==
 
 (async function() {
@@ -384,194 +385,247 @@
         }
     }
 
-
-
-    XHRDL.init();
-    await sleep(1500)
-    const searchParams=new URLSearchParams(document.location.search)
-    //公共方法区
-    const utils={
-        //处理请求的方法，就嗯抄就完事了嘛
-        nonce:()=>{return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (function(e) {
-            var t = 16 * Math.random() | 0;
-            return ("x" == e ? t : 3 & t | 8).toString(16)
-        }))},
-        sign:data=>{
-            var t = data
-            , n = Object.keys(t).sort().reduce((function(e, n) {
-                return e + (null === t[n] || void 0 === t[n] ? "" : t[n]) + n
-            }), "");
-            return CryptoJS.MD5(n).toString().toUpperCase().substring(0, 20)},
-        //自己根据逆向推测做的构造方法
-        buildPageBody:id=>{
-            const signBody={bookId:id,
-                            v:2,
-                            _timestamp:Date.now(),
-                            _nonce:utils.nonce()}
-            signBody._sign=utils.sign(signBody)
-            return new URLSearchParams(signBody).toString()},
-        buildFileBody:(id,resid,ressign,pcrid)=>{
-            const signBody={id:id,
-                            type:14,
-                            resId:resid,
-                            resSign:ressign,
-                            v:2,
-                            _timestamp:Date.now(),
-                            _nonce:utils.nonce()}
-            if(pcrid){
-                signBody.pcrId=pcrid
-            }
-            signBody._sign=utils.sign(signBody)
-            return new URLSearchParams(signBody).toString()},
-        //根据地址推测后缀
-        getExtFromUrl:url=>{
-            let ext=url.substr(url.lastIndexOf("."))
-            if(ext.indexOf("?")>0){
-                ext=ext.substr(0,ext.indexOf("?"))
-            }
-            return ext
-        },
+    window.history.pushState=(a,b,c)=>{
+        location.href=c;
     }
-    if(document.getElementsByClassName("ytButton-container button-exit")[0]){
-        //已登录
-        console.log("已登录，下载器已初始化")
-        if(CryptoJS){
-            const dlBtn=document.getElementsByClassName("studyCount")[0]
-            dlBtn.innerText="点我下载本书全部资源"
-            dlBtn.addEventListener("click",async event=>{
-                SakiProgress.showDiv();
-                //解析下载核心逻辑
-                event.preventDefault();
-                event.stopPropagation();
-                SakiProgress.setPercent(2);
-                SakiProgress.setText("正在读取页面信息...");
-                const pageDetail=await (await fetch("https://dogwood.xdfsjj.com/bookService/detail.do", {
-                    "headers": {
-                        "accept": "application/json, text/plain, */*",
-                        "content-type": "application/x-www-form-urlencoded",
-                    },
-                    "referrer": document.location.href,
-                    "body": utils.buildPageBody(searchParams.get("bookId")),
-                    "method": "POST",
-                    "mode": "cors",
-                    "credentials": "include"
-                })).json();
-                SakiProgress.setPercent(5);
-                SakiProgress.setText("页面信息已下载");
-                console.log(pageDetail);
-                let fileList=[]
-                if(pageDetail.success){
-                    pageDetail.data.chapters.forEach(chapter=>{
-                        //逐章节下载
-                        chapter.sections.forEach(section=>{
-                            //逐段下载
-                            section.ress.forEach(file=>{
-                                //逐文件下载
-                                //添加文件到列表
-                                fileList[fileList.length]=file;
+    switch (location.pathname){
+        case "/pc/personCenter.html":{
+            const parentDiv=document.getElementsByClassName("centerRouter-content")[0];
+            const observer = new MutationObserver(function(){
+                if(document.getElementsByClassName("container").length){
+                    const scannerHTML=`<div class="container"><div class="tagPoint"></div><div class="contentContainer"><div class="top"><div class="tagTitleContainer"><div class="tagText">扫码器</div></div><div class="bookContentContainer" id="scanContainer" style="display: flex;flex-direction: column;justify-content: center;"><div class="emptyViewBookMsg" id="scanMsg">点我启动扫码器</div><div></div></div></div></div></div>`;
+                    document.getElementsByClassName("ant-spin")[0].insertAdjacentHTML("afterend",scannerHTML)
+                    const msg=document.getElementById("scanMsg")
+                    msg.addEventListener("click",()=>{
+                        msg.innerText="正在启动扫码器，请允许使用摄像头"
+                        const scanCanvas=document.createElement("canvas")
+                        const canvas = scanCanvas.getContext('2d');
+                        document.getElementById("scanContainer").insertBefore(scanCanvas,msg);
+                        const video = document.createElement("video");
+                        navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } }).then(function(stream) {
+                            video.srcObject = stream;
+                            video.setAttribute("playsinline", true);
+                            video.play();
+                            const tick=()=>{if (video.readyState === video.HAVE_ENOUGH_DATA) {
+                                scanCanvas.height = video.videoHeight;
+                                scanCanvas.width = video.videoWidth;
+                                canvas.drawImage(video, 0, 0, scanCanvas.width, scanCanvas.height);
+                                let imageData = canvas.getImageData(0, 0, scanCanvas.width, scanCanvas.height)
+                                let code = jsQR(imageData.data, imageData.width, imageData.height, {
+                                    inversionAttempts: "dontInvert",
+                                });
+                                if (code) {
+                                    if(code.data.startsWith("http")){
+                                        const link=new URL(code.data)
+                                        if(link.host.endsWith("bookln.cn") || link.host.endsWith("xdfsjj.com")){
+                                            msg.innerText=link;
+                                            location.href=link;
+                                        }
+                                    }
+                                }
+                            }
+                                            requestAnimationFrame(tick);
+                                           }
+                            requestAnimationFrame(()=>{
+                                msg.innerText="正在识别二维码"
+                                tick();
+                            });
+                        });
+                    })
+                }
+            });
+            observer.observe(parentDiv, { childList: true });
+            break
+        }
+        case "/pc/bookDetail.html":{
+            XHRDL.init();
+            await sleep(1500)
+            const searchParams=new URLSearchParams(document.location.search)
+            //公共方法区
+            const utils={
+                //处理请求的方法，就嗯抄就完事了嘛
+                nonce:()=>{return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (function(e) {
+                    var t = 16 * Math.random() | 0;
+                    return ("x" == e ? t : 3 & t | 8).toString(16)
+                }))},
+                sign:data=>{
+                    var t = data
+                    , n = Object.keys(t).sort().reduce((function(e, n) {
+                        return e + (null === t[n] || void 0 === t[n] ? "" : t[n]) + n
+                    }), "");
+                    return CryptoJS.MD5(n).toString().toUpperCase().substring(0, 20)},
+                //自己根据逆向推测做的构造方法
+                buildPageBody:id=>{
+                    const signBody={bookId:id,
+                                    v:2,
+                                    _timestamp:Date.now(),
+                                    _nonce:utils.nonce()}
+                    signBody._sign=utils.sign(signBody)
+                    return new URLSearchParams(signBody).toString()},
+                buildFileBody:(id,resid,ressign,pcrid)=>{
+                    const signBody={id:id,
+                                    type:14,
+                                    resId:resid,
+                                    resSign:ressign,
+                                    v:2,
+                                    _timestamp:Date.now(),
+                                    _nonce:utils.nonce()}
+                    if(pcrid){
+                        signBody.pcrId=pcrid
+                    }
+                    signBody._sign=utils.sign(signBody)
+                    return new URLSearchParams(signBody).toString()},
+                //根据地址推测后缀
+                getExtFromUrl:url=>{
+                    let ext=url.substr(url.lastIndexOf("."))
+                    if(ext.indexOf("?")>0){
+                        ext=ext.substr(0,ext.indexOf("?"))
+                    }
+                    return ext
+                },
+            }
+            if(document.getElementsByClassName("ytButton-container button-exit")[0]){
+                //已登录
+                console.log("已登录，下载器已初始化")
+                if(CryptoJS){
+                    const dlBtn=document.getElementsByClassName("studyCount")[0]
+                    dlBtn.innerText="点我下载本书全部资源"
+                    dlBtn.addEventListener("click",async event=>{
+                        SakiProgress.showDiv();
+                        //解析下载核心逻辑
+                        event.preventDefault();
+                        event.stopPropagation();
+                        SakiProgress.setPercent(2);
+                        SakiProgress.setText("正在读取页面信息...");
+                        const pageDetail=await (await fetch("https://dogwood.xdfsjj.com/bookService/detail.do", {
+                            "headers": {
+                                "accept": "application/json, text/plain, */*",
+                                "content-type": "application/x-www-form-urlencoded",
+                            },
+                            "referrer": document.location.href,
+                            "body": utils.buildPageBody(searchParams.get("bookId")),
+                            "method": "POST",
+                            "mode": "cors",
+                            "credentials": "include"
+                        })).json();
+                        SakiProgress.setPercent(5);
+                        SakiProgress.setText("页面信息已下载");
+                        console.log(pageDetail);
+                        let fileList=[]
+                        if(pageDetail.success){
+                            pageDetail.data.chapters.forEach(chapter=>{
+                                //逐章节下载
+                                chapter.sections.forEach(section=>{
+                                    //逐段下载
+                                    section.ress.forEach(file=>{
+                                        //逐文件下载
+                                        //添加文件到列表
+                                        fileList[fileList.length]=file;
+                                    })
+                                })
                             })
-                        })
+                        }else{
+                            SakiProgress.setPercent(10);
+                            SakiProgress.setTextAlert("页面信息解析失败！")
+                        }
+                        //处理文件列表
+                        console.log(fileList);
+                        SakiProgress.setText("文件列表初始化完成，共计"+fileList.length+"个文件");
+                        for(let i=0;fileList[i];i++){
+                            SakiProgress.setText("正在解析"+i+"/"+fileList.length+"文件");
+                            SakiProgress.setPercent(10+(i/fileList.length*80))
+                            switch(fileList[i].type){
+                                case 2:{
+                                    const fileInfo=await(await fetch("https://dogwood.xdfsjj.com/resourceService/getLinkUrl.do", {
+                                        "headers": {
+                                            "accept": "application/json, text/plain, */*",
+                                            "content-type": "application/x-www-form-urlencoded",
+                                        },
+                                        "referrer": "https://dogwood.xdfsjj.com/pc/audioDetail.html?id="+searchParams.get("bookId")+"&pcrId="+fileList[i].pcrId+"&resId="+fileList[i].id+"&resSign="+fileList[i].idSign+"&type=14",
+                                        "referrerPolicy": "strict-origin-when-cross-origin",
+                                        "body": utils.buildFileBody(searchParams.get("bookId"),fileList[i].id,fileList[i].idSign),
+                                        "method": "POST",
+                                        "mode": "cors",
+                                        "credentials": "include"
+                                    })).json();
+                                    if(fileInfo.success){
+                                        let dlLink=""
+                                        if(fileInfo.encrypted && fileInfo.encryptedData){
+                                            dlLink=JSON.parse(CryptoJS.AES.decrypt(fileInfo.encryptedData.replace(/\r\n/g, ""), CryptoJS.enc.Utf8.parse("Suj4XDDt3jPsH9Jj"), { mode: CryptoJS.mode.ECB}).toString(CryptoJS.enc.Utf8)).url;
+                                        }else{
+                                            dlLink=fileInfo.url;
+                                        }
+                                        console.log(fileList[i].title+":"+dlLink)
+                                        XHRDL.newTask(dlLink,fileList[i].title+".mp3")
+                                    }else{
+                                        console.error("获取地址失败了");
+                                        console.error(fileInfo);
+                                    }
+                                    break;}
+                                case 7:
+                                case 19:{
+                                    const fileInfo=await (await fetch("https://dogwood.xdfsjj.com/resourceService/detail.do", {
+                                        "headers": {
+                                            "accept": "application/json, text/plain, */*",
+                                            "content-type": "application/x-www-form-urlencoded",
+                                        },
+                                        "referrer": "https://dogwood.xdfsjj.com/pc/resourceRichText.html?id="+searchParams.get("bookId")+"&pcrId="+fileList[i].pcrId+"&resId="+fileList[i].id+"&resSign="+fileList[i].idSign+"&type=14",
+                                        "body": utils.buildFileBody(searchParams.get("bookId"),fileList[i].id,fileList[i].idSign,fileList[i].pcrId),
+                                        "method": "POST",
+                                        "mode": "cors",
+                                        "credentials": "include"
+                                    })).json()
+                                    if(fileInfo.success){
+                                        fileInfo.data.resourceDTOList.forEach(doc=>{
+                                            let format=config.docFormat;
+                                            if(fileList[i].type==7){
+                                                format="pdf";
+                                            }
+                                            switch(format){
+                                                case "origin":{
+                                                    const rawUrl=new URL(doc.content).searchParams.get("furl");
+                                                    XHRDL.newTask(rawUrl,fileList[i].title+utils.getExtFromUrl(rawUrl))
+                                                    console.log(rawUrl)
+                                                    break;
+                                                }
+                                                case "pdf":{
+                                                    let filename=fileList[i].title+".pdf"
+                                                    if(fileList[i].type==7){
+                                                        filename=fileList[i].title+utils.getExtFromUrl(doc.downUrl)
+                                                    }
+                                                    XHRDL.newTask(doc.downUrl,filename)
+                                                    console.log(doc.downUrl)
+                                                    break;
+                                                }
+                                            }
+                                        })
+                                    }else{
+                                        console.error("获取地址失败了");
+                                        console.error(fileInfo);
+                                    }
+                                    break;}
+                                case 4:{
+                                    console.log("跳过广告链接");
+                                }
+                                default:{
+                                    console.error("遇到了不支持的文件类型");
+                                    console.error(fileList[i]);
+                                    break;}
+                            }
+                            await sleep(100)
+                        }
+                        SakiProgress.setPercent(100);
+                        SakiProgress.setText("文件信息全部获取完成！三秒后开始下载")
+                        await sleep(3000)
+                        XHRDL.DLEngine.start();
                     })
                 }else{
-                    SakiProgress.setPercent(10);
-                    SakiProgress.setTextAlert("页面信息解析失败！")
+                    SakiProgress.setTextAlert("没有加载CryptoJS")
                 }
-                //处理文件列表
-                console.log(fileList);
-                SakiProgress.setText("文件列表初始化完成，共计"+fileList.length+"个文件");
-                for(let i=0;fileList[i];i++){
-                    SakiProgress.setText("正在解析"+i+"/"+fileList.length+"文件");
-                    SakiProgress.setPercent(10+(i/fileList.length*80))
-                    switch(fileList[i].type){
-                        case 2:{
-                            const fileInfo=await(await fetch("https://dogwood.xdfsjj.com/resourceService/getLinkUrl.do", {
-                                "headers": {
-                                    "accept": "application/json, text/plain, */*",
-                                    "content-type": "application/x-www-form-urlencoded",
-                                },
-                                "referrer": "https://dogwood.xdfsjj.com/pc/audioDetail.html?id="+searchParams.get("bookId")+"&pcrId="+fileList[i].pcrId+"&resId="+fileList[i].id+"&resSign="+fileList[i].idSign+"&type=14",
-                                "referrerPolicy": "strict-origin-when-cross-origin",
-                                "body": utils.buildFileBody(searchParams.get("bookId"),fileList[i].id,fileList[i].idSign),
-                                "method": "POST",
-                                "mode": "cors",
-                                "credentials": "include"
-                            })).json();
-                            if(fileInfo.success){
-                                let dlLink=""
-                                if(fileInfo.encrypted && fileInfo.encryptedData){
-                                    dlLink=JSON.parse(CryptoJS.AES.decrypt(fileInfo.encryptedData.replace(/\r\n/g, ""), CryptoJS.enc.Utf8.parse("Suj4XDDt3jPsH9Jj"), { mode: CryptoJS.mode.ECB}).toString(CryptoJS.enc.Utf8)).url;
-                                }else{
-                                    dlLink=fileInfo.url;
-                                }
-                                console.log(fileList[i].title+":"+dlLink)
-                                XHRDL.newTask(dlLink,fileList[i].title+".mp3")
-                            }else{
-                                console.error("获取地址失败了");
-                                console.error(fileInfo);
-                            }
-                            break;}
-                        case 7:
-                        case 19:{
-                            const fileInfo=await (await fetch("https://dogwood.xdfsjj.com/resourceService/detail.do", {
-                                "headers": {
-                                    "accept": "application/json, text/plain, */*",
-                                    "content-type": "application/x-www-form-urlencoded",
-                                },
-                                "referrer": "https://dogwood.xdfsjj.com/pc/resourceRichText.html?id="+searchParams.get("bookId")+"&pcrId="+fileList[i].pcrId+"&resId="+fileList[i].id+"&resSign="+fileList[i].idSign+"&type=14",
-                                "body": utils.buildFileBody(searchParams.get("bookId"),fileList[i].id,fileList[i].idSign,fileList[i].pcrId),
-                                "method": "POST",
-                                "mode": "cors",
-                                "credentials": "include"
-                            })).json()
-                            if(fileInfo.success){
-                                fileInfo.data.resourceDTOList.forEach(doc=>{
-                                    let format=config.docFormat;
-                                    if(fileList[i].type==7){
-                                        format="pdf";
-                                    }
-                                    switch(format){
-                                        case "origin":{
-                                            const rawUrl=new URL(doc.content).searchParams.get("furl");
-                                            XHRDL.newTask(rawUrl,fileList[i].title+utils.getExtFromUrl(rawUrl))
-                                            console.log(rawUrl)
-                                            break;
-                                        }
-                                        case "pdf":{
-                                            let filename=fileList[i].title+".pdf"
-                                            if(fileList[i].type==7){
-                                                filename=fileList[i].title+utils.getExtFromUrl(doc.downUrl)
-                                            }
-                                            XHRDL.newTask(doc.downUrl,filename)
-                                            console.log(doc.downUrl)
-                                            break;
-                                        }
-                                    }
-                                })
-                            }else{
-                                console.error("获取地址失败了");
-                                console.error(fileInfo);
-                            }
-                            break;}
-                        case 4:{
-                            console.log("跳过广告链接");
-                        }
-                        default:{
-                            console.error("遇到了不支持的文件类型");
-                            console.error(fileList[i]);
-                            break;}
-                    }
-                    await sleep(100)
-                }
-                SakiProgress.setPercent(100);
-                SakiProgress.setText("文件信息全部获取完成！三秒后开始下载")
-                await sleep(3000)
-                XHRDL.DLEngine.start();
-            })
-        }else{
-            SakiProgress.setTextAlert("没有加载CryptoJS")
+            }else{
+                console.log("没有登录，下载器不可用")
+            }
+            break;
         }
-    }else{
-        console.log("没有登录，下载器不可用")
     }
-
 })();
