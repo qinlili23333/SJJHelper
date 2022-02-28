@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         书加加梨酱小帮手
 // @namespace    https://qinlili.bid/
-// @version      1.1.0
+// @version      1.2.0
 // @description  全自动下载资源！
 // @author       琴梨梨
 // @match        https://dogwood.xdfsjj.com/pc/*
@@ -10,7 +10,8 @@
 // @run-at       document-idle
 // @license      GPLv3
 // @require      https://lib.baomitu.com/crypto-js/4.1.1/crypto-js.min.js#sha512-E8QSvWZ0eCLGk4km3hxSsNmGWbLtSCSUcewDQPQWZF6pEU8GlT8a5fF32wOl1i8ftdMhssTrF/OhyGWwonTcXA==
-// @require      https://npm.elemecdn.com/jsqr@1.4.0/dist/jsQR.js
+// @require      https://lib.baomitu.com/m3u8-parser/4.7.0/m3u8-parser.min.js#sha512-k+LQLfQIGmuQTgjCfnE/iU3jdv+J9sdykVF5SgKtc+aMiKWPZqGjs60Bp3lug6rh9DVhcSZefpetyVXwUny48w==
+// @require      https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js
 // ==/UserScript==
 
 (async function() {
@@ -27,7 +28,15 @@
 
     if(!localStorage.getItem("first.qinlili")){
         alert("你第一次启用梨酱小帮手！\n本脚本包含复杂功能，建议打开脚本阅读顶端注释\n建议根据脚本顶端注释对脚本功能进行一些配置以符合个人偏好")
+        if(confirm(`你是否同意本脚本用户协议？
+        0.本脚本代码所有权归琴梨梨，请参阅GPLv3许可进行代码的二次使用，本项目使用了一些其他开源项目作为依赖，请同时注意这些项目的许可
+        1.本脚本用于出于合理的学习目的批量下载你已购的书籍或课程资源，请勿借助本脚本进行大规模资源抓取或其他可能消耗服务器资源的操作
+        2.书加加网站内一切内容版权均归网站持有者拥有，请合理使用本脚本下载的资源，分发或用于其他非个人学习欣赏用途可能会产生版权风险
+        3.本脚本不保证功能可用性，亦不保证对使用者的无害性，使用本脚本视为接受本脚本带来的一切损失由使用者承担`)&&confirm(`你是否同意本脚本隐私须知？
+        0.本脚本不收集任何信息
+        1.但如果你需要反馈，你可能需要提供浏览器版本等必要信息以便于琴梨梨排查`)){
         localStorage.setItem("first.qinlili",true)
+        }
     }
 
     //共享库
@@ -52,7 +61,7 @@
                 this.first.style.transition = "margin-top 0.5s"
                 this.progress = document.createElement("div");
                 this.progress.id = "dlprogress"
-                this.progress.style = "position: absolute;top: 0;bottom: 0;left: 0;background-color: #F17C67;z-index: -1;width:0%;transition: width 0.25s ease-in-out,opacity 0.25s,background-color 1s;"
+                this.progress.style = "position: absolute;top: 0;bottom: 0;left: 0;background-color: #F17C67;z-index: -1;width:0%;transition: width 0.25s ease-out,opacity 0.25s,background-color 1s;"
                 if (color) {
                     this.setColor(color);
                 }
@@ -388,6 +397,89 @@
     window.history.pushState=(a,b,c)=>{
         location.href=c;
     }
+    //公共方法区
+    //https://stackoverflow.com/questions/49129643/how-do-i-merge-an-array-of-uint8arrays
+    const concat=(arrays)=> {
+        // sum of individual array lengths
+        let totalLength = arrays.reduce((acc, value) => acc + value.length, 0);
+
+        if (!arrays.length) return null;
+
+        let result = new Uint8Array(totalLength);
+
+        // for each array - copy it over result
+        // next array is copied right after the previous one
+        let length = 0;
+        for(let array of arrays) {
+            result.set(array, length);
+            length += array.length;
+        }
+
+        return result;
+    }
+    const utils={
+        //处理请求的方法，就嗯抄就完事了嘛
+        nonce:()=>{return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (function(e) {
+            var t = 16 * Math.random() | 0;
+            return ("x" == e ? t : 3 & t | 8).toString(16)
+        }))},
+        sign:data=>{
+            var t = data
+            , n = Object.keys(t).sort().reduce((function(e, n) {
+                return e + (null === t[n] || void 0 === t[n] ? "" : t[n]) + n
+            }), "");
+            return CryptoJS.MD5(n).toString().toUpperCase().substring(0, 20)},
+        //自己根据逆向推测做的构造方法
+        buildPageBody:id=>{
+            const signBody={bookId:id,
+                            v:2,
+                            _timestamp:Date.now(),
+                            _nonce:utils.nonce()}
+            signBody._sign=utils.sign(signBody)
+            return new URLSearchParams(signBody).toString()},
+        buildLessonBody:id=>{
+            const signBody={lessonId:id,
+                            v:2,
+                            _timestamp:Date.now(),
+                            _nonce:utils.nonce()}
+            signBody._sign=utils.sign(signBody)
+            return new URLSearchParams(signBody).toString()},
+        buildLiveBody:(liveid,targetid,pcrid)=>{
+            const signBody={liveId: liveid,
+                            targetId: targetid,
+                            pcrId: pcrid,
+                            v:2,
+                            _timestamp:Date.now(),
+                            _nonce:utils.nonce()}
+            signBody._sign=utils.sign(signBody)
+            return new URLSearchParams(signBody).toString()},
+        buildFileBody:(id,resid,ressign,pcrid,type)=>{
+            const signBody={id:id,
+                            type:14,
+                            resId:resid,
+                            resSign:ressign,
+                            v:2,
+                            _timestamp:Date.now(),
+                            _nonce:utils.nonce()}
+            if(pcrid){
+                signBody.pcrId=pcrid
+            }
+            if(type){
+                signBody.type=type
+            }
+            signBody._sign=utils.sign(signBody)
+            return new URLSearchParams(signBody).toString()},
+        //根据地址推测后缀
+        getExtFromUrl:url=>{
+            let ext=url.substr(url.lastIndexOf("."))
+            if(ext.indexOf("?")>0){
+                ext=ext.substr(0,ext.indexOf("?"))
+            }
+            return ext
+        },
+    }
+    const searchParams=new URLSearchParams(document.location.search);
+
     switch (location.pathname){
         case "/pc/personCenter.html":{
             const parentDiv=document.getElementsByClassName("centerRouter-content")[0];
@@ -437,53 +529,255 @@
             observer.observe(parentDiv, { childList: true });
             break
         }
+        case "/pc/courseDetail.html":{
+            XHRDL.init();
+            await sleep(1500)
+            if(document.getElementsByClassName("ytButton-container button-exit")[0]){
+                //已登录
+                console.log("已登录，下载器已初始化")
+                if(CryptoJS){
+                    const dlBtn=document.getElementsByClassName("studyCount")[0]
+                    dlBtn.innerText="点我下载本书全部资源"
+                    dlBtn.addEventListener("click",async event=>{
+                        SakiProgress.showDiv();
+                        //解析下载核心逻辑
+                        event.preventDefault();
+                        event.stopPropagation();
+                        SakiProgress.setPercent(2);
+                        SakiProgress.setText("正在读取页面信息...");
+                        const pageDetail=await (await fetch("https://dogwood.xdfsjj.com/lessonService/detail.do", {
+                            "headers": {
+                                "accept": "application/json, text/plain, */*",
+                                "content-type": "application/x-www-form-urlencoded",
+                            },
+                            "referrer": document.location.href,
+                            "body": utils.buildLessonBody(searchParams.get("lessonId")),
+                            "method": "POST",
+                            "mode": "cors",
+                            "credentials": "include"
+                        })).json();
+                        SakiProgress.setPercent(5);
+                        SakiProgress.setText("页面信息已下载");
+                        console.log(pageDetail);
+                        let fileList=[]
+                        if(pageDetail.success&&pageDetail.data.lessonDTO.chapters){
+                            pageDetail.data.lessonDTO.chapters.forEach(chapter=>{
+                                if(chapter.ress){
+                                    //逐段下载
+                                    chapter.ress.forEach(file=>{
+                                        //逐文件下载
+                                        //添加文件到列表
+                                        fileList[fileList.length]=file;
+                                    })
+                                }
+                            })
+                        }else{
+                            SakiProgress.setPercent(10);
+                            SakiProgress.setTextAlert("页面信息解析失败！")
+                        }
+                        //处理文件列表
+                        console.log(fileList);
+                        SakiProgress.setText("文件列表初始化完成，共计"+fileList.length+"个文件");
+                        //文件列表解析
+                        for(let i=0;fileList[i];i++){
+                            SakiProgress.setText("正在解析"+i+"/"+fileList.length+"文件");
+                            SakiProgress.setPercent(10+(i/fileList.length*80))
+                            switch(fileList[i].type){
+                                case 1:{
+                                    const fileInfo=await(await fetch("https://dogwood.xdfsjj.com/resourceService/getLinkUrl.do", {
+                                        "headers": {
+                                            "accept": "application/json, text/plain, */*",
+                                            "content-type": "application/x-www-form-urlencoded",
+                                        },
+                                        "referrer": "https://dogwood.xdfsjj.com/pc/audioDetail.html?id="+searchParams.get("lessonId")+"&pcrId="+fileList[i].pcrId+"&resId="+fileList[i].id+"&resSign="+fileList[i].idSign+"&type=47",
+                                        "referrerPolicy": "strict-origin-when-cross-origin",
+                                        "body": utils.buildFileBody(searchParams.get("lessonId"),fileList[i].id,fileList[i].idSign,null,47),
+                                        "method": "POST",
+                                        "mode": "cors",
+                                        "credentials": "include"
+                                    })).json();
+                                    if(fileInfo.success){
+                                        let dlLink=""
+                                        if(fileInfo.encrypted && fileInfo.encryptedData){
+                                            let decryptData=JSON.parse(CryptoJS.AES.decrypt(fileInfo.encryptedData.replace(/\r\n/g, ""), CryptoJS.enc.Utf8.parse("Suj4XDDt3jPsH9Jj"), { mode: CryptoJS.mode.ECB}).toString(CryptoJS.enc.Utf8))
+                                            switch(decryptData.mediaType){
+                                                case 1:{
+                                                    dlLink=decryptData.url;
+                                                    break
+                                                }
+                                                case 2:{
+                                                    //m3u8视频
+                                                    dlLink=new URL(decryptData.url);
+                                                    const m3u8Text=await (await fetch(dlLink)).text();
+                                                    const parser = new m3u8Parser.Parser();
+                                                    parser.push(m3u8Text);
+                                                    const segments=parser.manifest.segments;
+                                                    console.log(segments);
+                                                    const cdn=dlLink.origin;
+                                                    SakiProgress.setPercent(0);
+                                                    SakiProgress.setText("遇到无法置入队列的m3u8视频！启用合并下载模式！")
+                                                    let tsCache=[]
+                                                    for(let current=0;segments[current];current++){
+                                                        SakiProgress.setPercent(current/segments.length*90);
+                                                        tsCache[current]=await (await fetch(cdn+segments[current].uri)).blob()
+                                                    }
+                                                    const blobLink=URL.createObjectURL(new Blob(tsCache))
+                                                    dlLink="blob"
+                                                    let eleLink = document.createElement('a');
+                                                    eleLink.download = fileList[i].title+".ts";
+                                                    eleLink.style.display = 'none';
+                                                    eleLink.href = blobLink;
+                                                    document.body.appendChild(eleLink);
+                                                    eleLink.click();
+                                                    document.body.removeChild(eleLink);
+                                                    SakiProgress.setPercent(100);
+                                                    break
+                                                }
+                                            }
+                                        }else{
+                                            dlLink=fileInfo.url;
+                                        }
+                                        if(!(dlLink=="blob")){
+                                            console.log(fileList[i].title+":"+dlLink)
+                                            XHRDL.newTask(dlLink,fileList[i].title+".mp4")
+                                        }
+                                    }else{
+                                        console.error("获取地址失败了");
+                                        console.error(fileInfo);
+                                    }
+                                    break;
+                                }
+                                case 2:{
+                                    const fileInfo=await(await fetch("https://dogwood.xdfsjj.com/resourceService/getLinkUrl.do", {
+                                        "headers": {
+                                            "accept": "application/json, text/plain, */*",
+                                            "content-type": "application/x-www-form-urlencoded",
+                                        },
+                                        "referrer": "https://dogwood.xdfsjj.com/pc/audioDetail.html?id="+searchParams.get("lessonId")+"&pcrId="+fileList[i].pcrId+"&resId="+fileList[i].id+"&resSign="+fileList[i].idSign+"&type=47",
+                                        "referrerPolicy": "strict-origin-when-cross-origin",
+                                        "body": utils.buildFileBody(searchParams.get("lessonId"),fileList[i].id,fileList[i].idSign),
+                                        "method": "POST",
+                                        "mode": "cors",
+                                        "credentials": "include"
+                                    })).json();
+                                    if(fileInfo.success){
+                                        let dlLink=""
+                                        if(fileInfo.encrypted && fileInfo.encryptedData){
+                                            dlLink=JSON.parse(CryptoJS.AES.decrypt(fileInfo.encryptedData.replace(/\r\n/g, ""), CryptoJS.enc.Utf8.parse("Suj4XDDt3jPsH9Jj"), { mode: CryptoJS.mode.ECB}).toString(CryptoJS.enc.Utf8)).url;
+                                        }else{
+                                            dlLink=fileInfo.url;
+                                        }
+                                        console.log(fileList[i].title+":"+dlLink)
+                                        XHRDL.newTask(dlLink,fileList[i].title+".mp3")
+                                    }else{
+                                        console.error("获取地址失败了");
+                                        console.error(fileInfo);
+                                    }
+                                    break;
+                                }
+                                case 7:
+                                case 19:{
+                                    const fileInfo=await (await fetch("https://dogwood.xdfsjj.com/resourceService/detail.do", {
+                                        "headers": {
+                                            "accept": "application/json, text/plain, */*",
+                                            "content-type": "application/x-www-form-urlencoded",
+                                        },
+                                        "referrer": "https://dogwood.xdfsjj.com/pc/resourceRichText.html?id="+searchParams.get("lessonId")+"&pcrId="+fileList[i].pcrId+"&resId="+fileList[i].id+"&resSign="+fileList[i].idSign+"&type=47",
+                                        "body": utils.buildFileBody(searchParams.get("lessonId"),fileList[i].id,fileList[i].idSign,fileList[i].pcrId,47),
+                                        "method": "POST",
+                                        "mode": "cors",
+                                        "credentials": "include"
+                                    })).json()
+                                    if(fileInfo.success){
+                                        fileInfo.data.resourceDTOList.forEach(doc=>{
+                                            let format=config.docFormat;
+                                            if(fileList[i].type==7){
+                                                format="pdf";
+                                            }
+                                            switch(format){
+                                                case "origin":{
+                                                    const rawUrl=new URL(doc.content).searchParams.get("furl");
+                                                    XHRDL.newTask(rawUrl,fileList[i].title+utils.getExtFromUrl(rawUrl))
+                                                    console.log(rawUrl)
+                                                    break;
+                                                }
+                                                case "pdf":{
+                                                    let filename=fileList[i].title+".pdf"
+                                                    if(fileList[i].type==7){
+                                                        filename=fileList[i].title+utils.getExtFromUrl(doc.downUrl)
+                                                    }
+                                                    XHRDL.newTask(doc.downUrl,filename)
+                                                    console.log(doc.downUrl)
+                                                    break;
+                                                }
+                                            }
+                                        })
+                                    }else{
+                                        console.error("获取地址失败了");
+                                        console.error(fileInfo);
+                                    }
+                                    break;}
+                                case 4:{
+                                    console.log("跳过广告链接");
+                                    break;
+                                }
+                                case 24:{
+                                    const fileInfo=await (await fetch("https://dogwood.xdfsjj.com/liveService/queryById.do", {
+                                        "headers": {
+                                            "accept": "application/json, text/plain, */*",
+                                            "content-type": "application/x-www-form-urlencoded",
+                                        },
+                                        "referrer": "https://dogwood.xdfsjj.com/pc/livePlayback.html?liveId="+fileList[i].fkId+"&pcrId="+fileList[i].pcrId+"&targetId"+searchParams.get("lessonId"),
+                                        "body": utils.buildLiveBody(fileList[i].fkId,searchParams.get("lessonId"),fileList[i].pcrId),
+                                        "method": "POST",
+                                        "mode": "cors",
+                                        "credentials": "include"
+                                    })).json();
+                                    if(fileInfo.success){
+                                        let dlLink=""
+                                        if(fileInfo.encrypted && fileInfo.encryptedData){
+                                            let decryptData=JSON.parse(CryptoJS.AES.decrypt(fileInfo.encryptedData.replace(/\r\n/g, ""), CryptoJS.enc.Utf8.parse("Suj4XDDt3jPsH9Jj"), { mode: CryptoJS.mode.ECB}).toString(CryptoJS.enc.Utf8))
+                                            if(decryptData.playbacks){
+                                                dlLink=decryptData.playbacks;
+                                            }else{
+                                                console.error("该直播尚未结束，无回放解析");
+                                                console.error(fileInfo);
+                                                break;
+                                            }
+                                        }else{
+                                            dlLink=fileInfo.url;
+                                        }
+                                        console.log(fileList[i].title+":"+dlLink)
+                                        XHRDL.newTask(dlLink,fileList[i].title+".mp4")
+                                    }else{
+                                        console.error("获取地址失败了");
+                                        console.error(fileInfo);
+                                    }
+                                    break;
+                                }
+                                default:{
+                                    console.error("遇到了不支持的文件类型");
+                                    console.error(fileList[i]);
+                                    break;}
+                            }
+                            await sleep(100)
+                        }
+                        SakiProgress.setPercent(100);
+                        SakiProgress.setText("文件信息全部获取完成！三秒后开始下载")
+                        await sleep(3000)
+                        XHRDL.DLEngine.start();
+                    })
+                }else{
+                    SakiProgress.setTextAlert("没有加载CryptoJS")
+                }
+            }else{
+                console.log("没有登录，下载器不可用")
+            }
+            break
+        }
         case "/pc/bookDetail.html":{
             XHRDL.init();
             await sleep(1500)
-            const searchParams=new URLSearchParams(document.location.search)
-            //公共方法区
-            const utils={
-                //处理请求的方法，就嗯抄就完事了嘛
-                nonce:()=>{return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (function(e) {
-                    var t = 16 * Math.random() | 0;
-                    return ("x" == e ? t : 3 & t | 8).toString(16)
-                }))},
-                sign:data=>{
-                    var t = data
-                    , n = Object.keys(t).sort().reduce((function(e, n) {
-                        return e + (null === t[n] || void 0 === t[n] ? "" : t[n]) + n
-                    }), "");
-                    return CryptoJS.MD5(n).toString().toUpperCase().substring(0, 20)},
-                //自己根据逆向推测做的构造方法
-                buildPageBody:id=>{
-                    const signBody={bookId:id,
-                                    v:2,
-                                    _timestamp:Date.now(),
-                                    _nonce:utils.nonce()}
-                    signBody._sign=utils.sign(signBody)
-                    return new URLSearchParams(signBody).toString()},
-                buildFileBody:(id,resid,ressign,pcrid)=>{
-                    const signBody={id:id,
-                                    type:14,
-                                    resId:resid,
-                                    resSign:ressign,
-                                    v:2,
-                                    _timestamp:Date.now(),
-                                    _nonce:utils.nonce()}
-                    if(pcrid){
-                        signBody.pcrId=pcrid
-                    }
-                    signBody._sign=utils.sign(signBody)
-                    return new URLSearchParams(signBody).toString()},
-                //根据地址推测后缀
-                getExtFromUrl:url=>{
-                    let ext=url.substr(url.lastIndexOf("."))
-                    if(ext.indexOf("?")>0){
-                        ext=ext.substr(0,ext.indexOf("?"))
-                    }
-                    return ext
-                },
-            }
             if(document.getElementsByClassName("ytButton-container button-exit")[0]){
                 //已登录
                 console.log("已登录，下载器已初始化")
@@ -512,17 +806,21 @@
                         SakiProgress.setText("页面信息已下载");
                         console.log(pageDetail);
                         let fileList=[]
-                        if(pageDetail.success){
+                        if(pageDetail.success&&pageDetail.data.chapters){
                             pageDetail.data.chapters.forEach(chapter=>{
-                                //逐章节下载
-                                chapter.sections.forEach(section=>{
-                                    //逐段下载
-                                    section.ress.forEach(file=>{
-                                        //逐文件下载
-                                        //添加文件到列表
-                                        fileList[fileList.length]=file;
+                                if(chapter.sections){
+                                    //逐章节下载
+                                    chapter.sections.forEach(section=>{
+                                        if(section.ress){
+                                            //逐段下载
+                                            section.ress.forEach(file=>{
+                                                //逐文件下载
+                                                //添加文件到列表
+                                                fileList[fileList.length]=file;
+                                            })
+                                        }
                                     })
-                                })
+                                }
                             })
                         }else{
                             SakiProgress.setPercent(10);
@@ -531,6 +829,7 @@
                         //处理文件列表
                         console.log(fileList);
                         SakiProgress.setText("文件列表初始化完成，共计"+fileList.length+"个文件");
+                        //文件列表解析
                         for(let i=0;fileList[i];i++){
                             SakiProgress.setText("正在解析"+i+"/"+fileList.length+"文件");
                             SakiProgress.setPercent(10+(i/fileList.length*80))
