@@ -1,17 +1,18 @@
 // ==UserScript==
 // @name         书加加梨酱小帮手
 // @namespace    https://qinlili.bid/
-// @version      1.2.0
+// @version      1.3.0
 // @description  全自动下载资源！
 // @author       琴梨梨
+// @connect      xdfsjj.com
 // @match        https://dogwood.xdfsjj.com/pc/*
 // @icon         https://dogwood.xdfsjj.com/qrcode/img/favicon.ico
-// @grant        none
 // @run-at       document-idle
 // @license      GPLv3
 // @require      https://lib.baomitu.com/crypto-js/4.1.1/crypto-js.min.js#sha512-E8QSvWZ0eCLGk4km3hxSsNmGWbLtSCSUcewDQPQWZF6pEU8GlT8a5fF32wOl1i8ftdMhssTrF/OhyGWwonTcXA==
 // @require      https://lib.baomitu.com/m3u8-parser/4.7.0/m3u8-parser.min.js#sha512-k+LQLfQIGmuQTgjCfnE/iU3jdv+J9sdykVF5SgKtc+aMiKWPZqGjs60Bp3lug6rh9DVhcSZefpetyVXwUny48w==
 // @require      https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js
+// @grant        GM_xmlhttpRequest
 // ==/UserScript==
 
 (async function() {
@@ -20,22 +21,33 @@
     const config={
         //文档下载格式，origin为下载最原始的文件，pdf为下载pdf格式的导出文件
         docFormat:"origin"
-    }
-
-
-
+    };
+    //尝试解锁
+    (function(open) {
+        XMLHttpRequest.prototype.open = function(method, url, async, user, pass) {
+            if(url.indexOf("userOrderService/isBuy.do")>0){
+                url= "data:application/json;base64,eyJkYXRhIjp7InJlc3VsdCI6InRydWUifSwic3VjY2VzcyI6dHJ1ZX0=";
+            }
+            open.call(this, method, url, async, user, pass);
+        };
+    })(XMLHttpRequest.prototype.open);
 
 
     if(!localStorage.getItem("first.qinlili")){
-        alert("你第一次启用梨酱小帮手！\n本脚本包含复杂功能，建议打开脚本阅读顶端注释\n建议根据脚本顶端注释对脚本功能进行一些配置以符合个人偏好")
+        alert(`你第一次启用梨酱小帮手！
+本脚本包含复杂功能，建议打开脚本阅读顶端注释
+建议根据脚本顶端注释对脚本功能进行一些配置以符合个人偏好`)
         if(confirm(`你是否同意本脚本用户协议？
-        0.本脚本代码所有权归琴梨梨，请参阅GPLv3许可进行代码的二次使用，本项目使用了一些其他开源项目作为依赖，请同时注意这些项目的许可
-        1.本脚本用于出于合理的学习目的批量下载你已购的书籍或课程资源，请勿借助本脚本进行大规模资源抓取或其他可能消耗服务器资源的操作
-        2.书加加网站内一切内容版权均归网站持有者拥有，请合理使用本脚本下载的资源，分发或用于其他非个人学习欣赏用途可能会产生版权风险
-        3.本脚本不保证功能可用性，亦不保证对使用者的无害性，使用本脚本视为接受本脚本带来的一切损失由使用者承担`)&&confirm(`你是否同意本脚本隐私须知？
-        0.本脚本不收集任何信息
-        1.但如果你需要反馈，你可能需要提供浏览器版本等必要信息以便于琴梨梨排查`)){
-        localStorage.setItem("first.qinlili",true)
+0.本脚本代码所有权归琴梨梨，请参阅GPLv3许可进行代码的二次使用，本项目使用了一些其他开源项目作为依赖，请同时注意这些项目的许可
+1.本脚本用于出于合理的学习目的批量下载你已购的书籍或课程资源，请勿借助本脚本进行大规模资源抓取或其他可能消耗服务器资源的操作
+2.书加加网站内一切内容版权均归网站持有者拥有，请合理使用本脚本下载的资源，分发或用于其他非个人学习欣赏用途可能会产生版权风险
+3.本脚本不保证功能可用性，亦不保证对使用者的无害性，使用本脚本视为接受本脚本带来的一切损失由使用者承担`)&&confirm(`你是否同意本脚本隐私须知？
+0.本脚本不收集任何信息
+1.但如果你需要反馈，你可能需要提供浏览器版本等必要信息以便于琴梨梨排查`)){
+            localStorage.setItem("first.qinlili",true)
+        }else{
+            console.log("用户拒绝了脚本加载")
+            return false;
         }
     }
 
@@ -477,6 +489,56 @@
             }
             return ext
         },
+        m3u8Downloader:async (url,title)=>{
+            SakiProgress.setPercent(0);
+            SakiProgress.setText("[m3u8下载]正在读取m3u8信息");
+            let dlLink=new URL(url);
+            const m3u8Text=await (await fetch(dlLink)).text();
+            const parser = new m3u8Parser.Parser();
+            parser.push(m3u8Text);
+            const segments=parser.manifest.segments;
+            console.log(segments);
+            const cdn=dlLink.origin;
+            let tsCache=[];
+            let onFullDL = function () { };
+            function waitFullDL() {
+                return new Promise(resolve => {
+                    onFullDL = () => {
+                        resolve();
+                    }
+                });
+            }
+            SakiProgress.setPercent(5);
+            SakiProgress.setText("[m3u8下载]Init Neeko Engine...");
+            await sleep(500)
+            const batchDL=async (url,position)=>{
+                tsCache[position]=await (await fetch(url)).blob()
+                SakiProgress.setPercent(5+Object.keys(tsCache).length/segments.length*80);
+                SakiProgress.setText("[m3u8下载]多线程极速下载切片，已完成"+(Object.keys(tsCache).length)+"个，共"+segments.length+"个");
+                if(Object.keys(tsCache).length==segments.length){
+                    SakiProgress.setPercent(85);
+                    SakiProgress.setText("[m3u8下载]正在合并TS文件");
+                    const tsFile=new Blob(tsCache)
+                    SakiProgress.setPercent(90);
+                    SakiProgress.setText("[m3u8下载]正在转换为MP4");
+                    SakiProgress.setPercent(97);
+                    SakiProgress.setText("[m3u8下载]正在导出下载");
+                    let eleLink = document.createElement('a');
+                    eleLink.download = title+".ts";
+                    eleLink.style.display = 'none';
+                    eleLink.href = URL.createObjectURL(tsFile);
+                    document.body.appendChild(eleLink);
+                    eleLink.click();
+                    document.body.removeChild(eleLink);
+                    SakiProgress.setPercent(100);
+                    onFullDL();
+                }
+            }
+            for(let current=0;segments[current];current++){
+                batchDL(cdn+segments[current].uri,current)
+            }
+            await waitFullDL();
+        },
     }
     const searchParams=new URLSearchParams(document.location.search);
 
@@ -607,30 +669,8 @@
                                                 }
                                                 case 2:{
                                                     //m3u8视频
-                                                    dlLink=new URL(decryptData.url);
-                                                    const m3u8Text=await (await fetch(dlLink)).text();
-                                                    const parser = new m3u8Parser.Parser();
-                                                    parser.push(m3u8Text);
-                                                    const segments=parser.manifest.segments;
-                                                    console.log(segments);
-                                                    const cdn=dlLink.origin;
-                                                    SakiProgress.setPercent(0);
-                                                    SakiProgress.setText("遇到无法置入队列的m3u8视频！启用合并下载模式！")
-                                                    let tsCache=[]
-                                                    for(let current=0;segments[current];current++){
-                                                        SakiProgress.setPercent(current/segments.length*90);
-                                                        tsCache[current]=await (await fetch(cdn+segments[current].uri)).blob()
-                                                    }
-                                                    const blobLink=URL.createObjectURL(new Blob(tsCache))
+                                                    await utils.m3u8Downloader(decryptData.url,fileList[i].title);
                                                     dlLink="blob"
-                                                    let eleLink = document.createElement('a');
-                                                    eleLink.download = fileList[i].title+".ts";
-                                                    eleLink.style.display = 'none';
-                                                    eleLink.href = blobLink;
-                                                    document.body.appendChild(eleLink);
-                                                    eleLink.click();
-                                                    document.body.removeChild(eleLink);
-                                                    SakiProgress.setPercent(100);
                                                     break
                                                 }
                                             }
@@ -669,6 +709,47 @@
                                         }
                                         console.log(fileList[i].title+":"+dlLink)
                                         XHRDL.newTask(dlLink,fileList[i].title+".mp3")
+                                    }else{
+                                        console.error("获取地址失败了");
+                                        console.error(fileInfo);
+                                    }
+                                    break;
+                                }
+                                case 3:{
+                                    //XHRDL.newTask("data:text,[InternetShortcut]%0AURL=https://app.xdfsjj.com/resourceservice/mediaplay.do?resId="+fileList[i].id+"&resIdSign="+fileList[i].idSign+"&mediaType=4",fileList[i].title+".url")
+                                    //处理跨域问题
+                                    function asyncFetchPic(){
+                                        return new Promise(resolve => {
+                                            let pic=GM_xmlhttpRequest({
+                                                method: "GET", url: "https://app.xdfsjj.com/resourceservice/mediaplay.do?resId="+fileList[i].id+"&resIdSign="+fileList[i].idSign+"&mediaType=4", responseType: "blob", onload: (res) => {
+                                                    console.log(res.response)
+                                                    XHRDL.newTask(URL.createObjectURL(res.response),fileList[i].title+".png")
+                                                    resolve();
+                                                }
+                                            })
+                                            });
+                                    }
+                                    await asyncFetchPic();
+                                    break;
+                                }
+                                case 27:{
+                                    const fileInfo=await (await fetch("https://dogwood.xdfsjj.com/resourceService/detail.do", {
+                                        "headers": {
+                                            "accept": "application/json, text/plain, */*",
+                                            "content-type": "application/x-www-form-urlencoded",
+                                        },
+                                        "referrer": "https://dogwood.xdfsjj.com/pc/resourceRichText.html?id="+searchParams.get("lessonId")+"&pcrId="+fileList[i].pcrId+"&resId="+fileList[i].id+"&resSign="+fileList[i].idSign+"&type=47",
+                                        "body": utils.buildFileBody(searchParams.get("lessonId"),fileList[i].id,fileList[i].idSign,fileList[i].pcrId,47),
+                                        "method": "POST",
+                                        "mode": "cors",
+                                        "credentials": "include"
+                                    })).json()
+                                    if(fileInfo.success){
+                                        //读取Content写入HTML
+                                        fileInfo.data.resourceDTOList.forEach(doc=>{
+                                            let htmlDoc=doc.content;
+                                            XHRDL.newTask(URL.createObjectURL(new Blob([htmlDoc])),fileList[i].title+".html");
+                                        })
                                     }else{
                                         console.error("获取地址失败了");
                                         console.error(fileInfo);
