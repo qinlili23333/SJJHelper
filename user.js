@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         书加加梨酱小帮手
 // @namespace    https://qinlili.bid/
-// @version      1.3.0
+// @version      1.4.0
 // @description  全自动下载资源！
 // @author       琴梨梨
 // @connect      xdfsjj.com
@@ -11,8 +11,12 @@
 // @license      GPLv3
 // @require      https://lib.baomitu.com/crypto-js/4.1.1/crypto-js.min.js#sha512-E8QSvWZ0eCLGk4km3hxSsNmGWbLtSCSUcewDQPQWZF6pEU8GlT8a5fF32wOl1i8ftdMhssTrF/OhyGWwonTcXA==
 // @require      https://lib.baomitu.com/m3u8-parser/4.7.0/m3u8-parser.min.js#sha512-k+LQLfQIGmuQTgjCfnE/iU3jdv+J9sdykVF5SgKtc+aMiKWPZqGjs60Bp3lug6rh9DVhcSZefpetyVXwUny48w==
+// @require      https://lib.baomitu.com/mux.js/6.0.1/mux.min.js#sha512-d52/L8+HR/4zLHARiYRxpq70V2k+AaO8CO2zAcY5BFeZtqX16cQ/N3Eof/yMSwFwfY6blTL6GcENw2TiZJSJog==
 // @require      https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js
+// @homepage     https://github.com/qinlili23333/SJJHelper
+// @supportURL   https://github.com/qinlili23333/SJJHelper
 // @grant        GM_xmlhttpRequest
+// @grant        GM_registerMenuCommand
 // ==/UserScript==
 
 (async function() {
@@ -20,8 +24,20 @@
     //这里是配置区，你可以对脚本进行一些功能上的自定义
     const config={
         //文档下载格式，origin为下载最原始的文件，pdf为下载pdf格式的导出文件
-        docFormat:"origin"
+        docFormat:localStorage.getItem("docFormat")||"origin",
+        //m3u8视频下载格式，ts为Binary合并的文件，兼容好，体积大，mp4为使用mux.js混流后的文件，体积小，但和部分播放器有兼容问题
+        m3u8Format:localStorage.getItem("m3u8Format")||"mp4"
     };
+    GM_registerMenuCommand("文档格式："+config.docFormat, () => {
+        localStorage.setItem("docFormat",(localStorage.getItem("docFormat")=="pdf")?"origin":"pdf");
+        document.location.reload();
+    });
+    GM_registerMenuCommand("m3u8视频格式："+config.m3u8Format, () => {
+        localStorage.setItem("m3u8Format",(localStorage.getItem("m3u8Format")=="ts")?"mp4":"ts");
+        document.location.reload();
+    });
+
+
     //尝试解锁
     (function(open) {
         XMLHttpRequest.prototype.open = function(method, url, async, user, pass) {
@@ -36,7 +52,9 @@
     if(!localStorage.getItem("first.qinlili")){
         alert(`你第一次启用梨酱小帮手！
 本脚本包含复杂功能，建议打开脚本阅读顶端注释
-建议根据脚本顶端注释对脚本功能进行一些配置以符合个人偏好`)
+建议根据脚本顶端注释对脚本功能进行一些配置以符合个人偏好
+如果本脚本对你有帮助，请在GreasyFork给个好评或在Github给个星星
+可以访问琴梨梨的小站qinlili.bid获取更多实用工具`)
         if(confirm(`你是否同意本脚本用户协议？
 0.本脚本代码所有权归琴梨梨，请参阅GPLv3许可进行代码的二次使用，本项目使用了一些其他开源项目作为依赖，请同时注意这些项目的许可
 1.本脚本用于出于合理的学习目的批量下载你已购的书籍或课程资源，请勿借助本脚本进行大规模资源抓取或其他可能消耗服务器资源的操作
@@ -510,28 +528,60 @@
             }
             SakiProgress.setPercent(5);
             SakiProgress.setText("[m3u8下载]Init Neeko Engine...");
-            await sleep(500)
+            await sleep(250)
             const batchDL=async (url,position)=>{
                 tsCache[position]=await (await fetch(url)).blob()
                 SakiProgress.setPercent(5+Object.keys(tsCache).length/segments.length*80);
                 SakiProgress.setText("[m3u8下载]多线程极速下载切片，已完成"+(Object.keys(tsCache).length)+"个，共"+segments.length+"个");
                 if(Object.keys(tsCache).length==segments.length){
-                    SakiProgress.setPercent(85);
-                    SakiProgress.setText("[m3u8下载]正在合并TS文件");
-                    const tsFile=new Blob(tsCache)
-                    SakiProgress.setPercent(90);
-                    SakiProgress.setText("[m3u8下载]正在转换为MP4");
-                    SakiProgress.setPercent(97);
-                    SakiProgress.setText("[m3u8下载]正在导出下载");
-                    let eleLink = document.createElement('a');
-                    eleLink.download = title+".ts";
-                    eleLink.style.display = 'none';
-                    eleLink.href = URL.createObjectURL(tsFile);
-                    document.body.appendChild(eleLink);
-                    eleLink.click();
-                    document.body.removeChild(eleLink);
-                    SakiProgress.setPercent(100);
-                    onFullDL();
+                    switch (config.m3u8Format){
+                        case "mp4":{
+                            SakiProgress.setPercent(90);
+                            SakiProgress.setText("[m3u8下载]正在转换为MP4");
+                            let transmuxer = new muxjs.mp4.Transmuxer({remux: true});
+                            transmuxer.on('data', segment=> {
+                                console.log(segment)
+                                let data = new Uint8Array(segment.initSegment.byteLength + segment.data.byteLength);
+                                data.set(segment.initSegment, 0);
+                                data.set(segment.data, segment.initSegment.byteLength);
+                                console.log(muxjs.mp4.tools.inspect(data));
+                                let mp4File=new Blob([data])
+                                SakiProgress.setPercent(97);
+                                SakiProgress.setText("[m3u8下载]正在导出下载");
+                                let eleLink = document.createElement('a');
+                                eleLink.download = title+".mp4";
+                                eleLink.style.display = 'none';
+                                eleLink.href = URL.createObjectURL(mp4File);
+                                document.body.appendChild(eleLink);
+                                eleLink.click();
+                                document.body.removeChild(eleLink);
+                                SakiProgress.setPercent(100);
+                                onFullDL();
+                            })
+                            for(let seg=0;tsCache[seg];seg++){
+                                transmuxer.push(new Uint8Array(await tsCache[seg].arrayBuffer()))
+                            }
+                            transmuxer.flush();
+                            break;
+                        }
+                        case "ts":{
+                            SakiProgress.setPercent(85);
+                            SakiProgress.setText("[m3u8下载]正在合并TS文件");
+                            let tsFile=new Blob(tsCache)
+                            SakiProgress.setPercent(97);
+                            SakiProgress.setText("[m3u8下载]正在导出下载");
+                            let eleLink = document.createElement('a');
+                            eleLink.download = title+".ts";
+                            eleLink.style.display = 'none';
+                            eleLink.href = URL.createObjectURL(tsFile);
+                            document.body.appendChild(eleLink);
+                            eleLink.click();
+                            document.body.removeChild(eleLink);
+                            SakiProgress.setPercent(100);
+                            onFullDL();
+                            break
+                        }
+                    }
                 }
             }
             for(let current=0;segments[current];current++){
