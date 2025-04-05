@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         书加加梨酱小帮手
 // @namespace    https://qinlili.bid/
-// @version      1.4.0
+// @version      1.4.1
 // @description  全自动下载资源！
 // @author       琴梨梨
 // @connect      xdfsjj.com
@@ -17,6 +17,8 @@
 // @supportURL   https://github.com/qinlili23333/SJJHelper
 // @grant        GM_xmlhttpRequest
 // @grant        GM_registerMenuCommand
+// @downloadURL https://update.greasyfork.org/scripts/440079/%E4%B9%A6%E5%8A%A0%E5%8A%A0%E6%A2%A8%E9%85%B1%E5%B0%8F%E5%B8%AE%E6%89%8B.user.js
+// @updateURL https://update.greasyfork.org/scripts/440079/%E4%B9%A6%E5%8A%A0%E5%8A%A0%E6%A2%A8%E9%85%B1%E5%B0%8F%E5%B8%AE%E6%89%8B.meta.js
 // ==/UserScript==
 
 (async function() {
@@ -540,11 +542,9 @@
                             SakiProgress.setText("[m3u8下载]正在转换为MP4");
                             let transmuxer = new muxjs.mp4.Transmuxer({remux: true});
                             transmuxer.on('data', segment=> {
-                                console.log(segment)
                                 let data = new Uint8Array(segment.initSegment.byteLength + segment.data.byteLength);
                                 data.set(segment.initSegment, 0);
                                 data.set(segment.data, segment.initSegment.byteLength);
-                                console.log(muxjs.mp4.tools.inspect(data));
                                 let mp4File=new Blob([data])
                                 SakiProgress.setPercent(97);
                                 SakiProgress.setText("[m3u8下载]正在导出下载");
@@ -556,6 +556,8 @@
                                 eleLink.click();
                                 document.body.removeChild(eleLink);
                                 SakiProgress.setPercent(100);
+                                transmuxer.reset();
+                                URL.revokeObjectURL(eleLink.href);
                                 onFullDL();
                             })
                             for(let seg=0;tsCache[seg];seg++){
