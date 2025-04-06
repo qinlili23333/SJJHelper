@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         书加加梨酱小帮手
 // @namespace    https://qinlili.bid/
-// @version      1.4.1
+// @version      1.4.2
 // @description  全自动下载资源！
 // @author       琴梨梨
 // @connect      xdfsjj.com
@@ -893,7 +893,7 @@
                                     console.error(fileList[i]);
                                     break;}
                             }
-                            await sleep(100)
+                            await sleep(20)
                         }
                         SakiProgress.setPercent(100);
                         SakiProgress.setText("文件信息全部获取完成！三秒后开始下载")
